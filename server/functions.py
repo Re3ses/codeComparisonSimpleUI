@@ -185,7 +185,7 @@ def compute_similarities(submissions):
 
 
 # NOT USED IN main.py
-# Remove
+# Remove in the future
 def check_plagiarism(filenames, directory=None, threshold=80):
     """
     Check for plagiarism in code submissions within a directory.
@@ -203,21 +203,23 @@ def check_plagiarism(filenames, directory=None, threshold=80):
 
     filenames = list(submissions.keys())
     file_count = len(filenames)
-
     results = []
     for i in range(file_count):
-        comparisons = [
-            {
-                "filename": filenames[j],
-                "codebert_similarity": codebert_similarities[i][j],
-                "jaccard_similarity": jaccard_similarities[i][j],
-                "tfidf_similarity": tfidf_similarities[i][j],
-                "combined_similarity": (codebert_similarities[i][j] + jaccard_similarities[i][j] + tfidf_similarities[i][j]) / 3,
-                "potential_plagiarism": (codebert_similarities[i][j] + jaccard_similarities[i][j] + tfidf_similarities[i][j]) / 3 > threshold
-            }
-            for j in range(file_count) if i != j
-        ]
+        comparisons = []
+        for j in range(file_count):
+            if i != j:
+                combined_similarity = (codebert_similarities[i][j] + jaccard_similarities[i][j] + tfidf_similarities[i][j]) / 3
+                comparisons.append({
+                    "filename": filenames[j],
+                    "codebert_similarity": codebert_similarities[i][j],
+                    "jaccard_similarity": jaccard_similarities[i][j],
+                    "tfidf_similarity": tfidf_similarities[i][j],
+                    "combined_similarity": combined_similarity,
+                    "potential_plagiarism": combined_similarity > threshold
+                })
         results.append({"file": filenames[i], "comparisons": comparisons})
+
+    return results
 
 
     return results
