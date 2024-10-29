@@ -27,18 +27,6 @@ tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
 model = RobertaModel.from_pretrained("microsoft/codebert-base")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
-
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-        return json.JSONEncoder.default(self, obj)
     
 def tree_to_sequence(code, language):
     if language == 'java':
@@ -92,17 +80,6 @@ def jaccard_similarity(set1, set2):
 
 def normalized_similarity(vec1, vec2):
     return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-
-def get_file_language(filename):
-    extension = os.path.splitext(filename)[1].lower()
-    if extension in ['.java']:
-        return 'java'
-    elif extension in ['.py', '.pyw']:
-        return 'python'
-    elif extension in ['.cpp', '.cxx', '.cc', '.c++', '.hpp', '.hxx', '.hh', '.h++', '.h']:
-        return 'cpp'
-    else:
-        raise ValueError(f"Unsupported file type: {filename}")
     
 def get_codebert_embedding(code):
     try:
@@ -115,31 +92,6 @@ def get_codebert_embedding(code):
         print(f"Error generating CodeBERT embedding: {str(e)}")
         return None
     
-def process_files(directory):
-    submissions = {}
-    for root, _, files in os.walk(directory):
-        for file in files:
-            try:
-                language = get_file_language(file)
-                file_path = os.path.join(root, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    try:
-                        code = f.read()
-                        preprocessed_code = preprocess_code(code, language)
-                        tree_sequence = tree_to_sequence(preprocessed_code, language)
-                        codebert_embedding = get_codebert_embedding(tree_sequence)
-                        submission = {
-                            'sequence': tree_sequence,
-                            'language': language,
-                            'embedding': codebert_embedding,
-                            'tokens': set(tree_sequence.split())
-                        }
-                        submissions[file] = submission
-                    except UnicodeDecodeError:
-                        print(f"Error reading {file_path}. Skipping.")
-            except ValueError as e:
-                print(f"Skipping file {file}: {str(e)}")
-    return submissions
 
 def compute_similarities(submissions):
     """
@@ -182,44 +134,3 @@ def compute_similarities(submissions):
             tfidf_similarities[i][j] = tfidf_similarities[j][i] = tfidf_sim * 100
 
     return codebert_similarities, jaccard_similarities, tfidf_similarities
-
-
-# NOT USED IN main.py
-# Remove in the future
-def check_plagiarism(filenames, directory=None, threshold=80):
-    """
-    Check for plagiarism in code submissions within a directory.
-
-    Args:
-        directory (str): The directory containing code submissions.
-        threshold (float): The similarity threshold for flagging potential plagiarism.
-
-    Returns:
-        list: A list of dictionaries containing file comparisons and similarity scores.
-    """
-    print("Checking for plagiarism in code submissions...")
-    submissions = process_files(directory)
-    codebert_similarities, jaccard_similarities, tfidf_similarities = compute_similarities(submissions)
-
-    filenames = list(submissions.keys())
-    file_count = len(filenames)
-    results = []
-    for i in range(file_count):
-        comparisons = []
-        for j in range(file_count):
-            if i != j:
-                combined_similarity = (codebert_similarities[i][j] + jaccard_similarities[i][j] + tfidf_similarities[i][j]) / 3
-                comparisons.append({
-                    "filename": filenames[j],
-                    "codebert_similarity": codebert_similarities[i][j],
-                    "jaccard_similarity": jaccard_similarities[i][j],
-                    "tfidf_similarity": tfidf_similarities[i][j],
-                    "combined_similarity": combined_similarity,
-                    "potential_plagiarism": combined_similarity > threshold
-                })
-        results.append({"file": filenames[i], "comparisons": comparisons})
-
-    return results
-
-
-    return results
