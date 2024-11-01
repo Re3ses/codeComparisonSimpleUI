@@ -1,11 +1,16 @@
-import re
+!pip install tree-sitter
+!pip install tree-sitter-java
+!pip install tree-sitter-python
+!pip install tree-sitter-cpp
+
 import os
-import json
 import numpy as np
+import json
 from tqdm import tqdm
 from tree_sitter import Language, Parser
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import re
 import torch
 from transformers import RobertaTokenizer, RobertaModel
 
@@ -39,7 +44,7 @@ class NumpyEncoder(json.JSONEncoder):
         elif isinstance(obj, np.bool_):
             return bool(obj)
         return json.JSONEncoder.default(self, obj)
-    
+
 def tree_to_sequence(code, language):
     if language == 'java':
         parser = java_parser
@@ -66,6 +71,8 @@ def preprocess_code(code, language):
         code = re.sub(r'//.*?\n|/\*.*?\*/', '', code, flags=re.DOTALL)
     elif language == 'python':
         code = re.sub(r'#.*?\n|\'\'\'.*?\'\'\'|""".*?"""', '', code, flags=re.DOTALL)
+    elif language == 'cpp':
+        code = re.sub(r'//.*?\n|/\*.*?\*/', '', code, flags=re.DOTALL)
 
     # Remove string literals
     code = re.sub(r'".*?"', '""', code)
@@ -75,6 +82,8 @@ def preprocess_code(code, language):
         code = re.sub(r'import\s+[\w.]+;', '', code)
     elif language == 'python':
         code = re.sub(r'import\s+[\w.]+|from\s+[\w.]+\s+import\s+[\w.]+', '', code)
+    elif language == 'cpp':
+        code = re.sub(r'#include\s+<[\w.]+>|#include\s+"[\w.]+"', '', code)
 
     # Remove package declarations (Java only)
     if language == 'java':
@@ -83,7 +92,6 @@ def preprocess_code(code, language):
     # Remove whitespace
     code = re.sub(r'\s+', ' ', code).strip()
     return code
-
 
 def jaccard_similarity(set1, set2):
     intersection = len(set1.intersection(set2))
@@ -103,10 +111,20 @@ def get_file_language(filename):
         return 'cpp'
     else:
         raise ValueError(f"Unsupported file type: {filename}")
-    
-def get_codebert_embedding(code):
+
+def get_codebert_embedding(code, tokenizer_type='default'):
     try:
-        inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        if tokenizer_type == 'default':
+            inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        elif tokenizer_type == 'word':
+            tokens = code.split()
+            inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        elif tokenizer_type == 'character':
+            tokens = list(code)
+            inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        else:
+            raise ValueError(f"Unsupported tokenizer type: {tokenizer_type}")
+
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
             outputs = model(**inputs)
@@ -114,8 +132,8 @@ def get_codebert_embedding(code):
     except Exception as e:
         print(f"Error generating CodeBERT embedding: {str(e)}")
         return None
-    
-def process_files(directory):
+
+def process_files(directory, tokenizer_type='default', use_tree_sitter=False):
     submissions = {}
     for root, _, files in os.walk(directory):
         for file in files:
@@ -126,13 +144,18 @@ def process_files(directory):
                     try:
                         code = f.read()
                         preprocessed_code = preprocess_code(code, language)
-                        tree_sequence = tree_to_sequence(preprocessed_code, language)
-                        codebert_embedding = get_codebert_embedding(tree_sequence)
+                        if use_tree_sitter:
+                            tree_sequence = tree_to_sequence(preprocessed_code, language)
+                            codebert_embedding = get_codebert_embedding(tree_sequence, tokenizer_type)
+                            tokens = set(tree_sequence.split())
+                        else:
+                            codebert_embedding = get_codebert_embedding(preprocessed_code, tokenizer_type)
+                            tokens = set(preprocessed_code.split())
                         submission = {
-                            'sequence': tree_sequence,
+                            'sequence': tree_sequence if use_tree_sitter else preprocessed_code,
                             'language': language,
                             'embedding': codebert_embedding,
-                            'tokens': set(tree_sequence.split())
+                            'tokens': tokens
                         }
                         submissions[file] = submission
                     except UnicodeDecodeError:
@@ -141,27 +164,29 @@ def process_files(directory):
                 print(f"Skipping file {file}: {str(e)}")
     return submissions
 
+def run_all_combinations(directory):
+    tokenizer_options = ['default', 'word', 'character']
+    tree_sitter_options = [False, True]
+    all_results = {}
+
+    for tokenizer_type in tokenizer_options:
+        for use_tree_sitter in tree_sitter_options:
+            print(f"Running with tokenizer: {tokenizer_type}, Tree-Sitter: {'Yes' if use_tree_sitter else 'No'}")
+            plagiarism_results = check_plagiarism(directory, tokenizer_type=tokenizer_type, use_tree_sitter=use_tree_sitter)
+
+            key = f"{tokenizer_type}_{'tree_sitter' if use_tree_sitter else 'no_tree_sitter'}"
+            all_results[key] = plagiarism_results
+
+    return all_results
+
 def compute_similarities(submissions):
-    """
-    Compute similarity matrices for a set of code submissions using CodeBERT embeddings, Jaccard similarity, and TF-IDF similarity.
-    Args:
-        submissions (dict): A dictionary where keys are filenames and values are dictionaries containing:
-            - 'sequence' (str): The code sequence.
-            - 'embedding' (np.ndarray): The CodeBERT embedding of the code sequence.
-            - 'tokens' (list of str): The tokens of the code sequence.
-    Returns:
-        tuple: A tuple containing three numpy arrays:
-            - codebert_similarities (np.ndarray): A 2D array of CodeBERT similarity scores between submissions.
-            - jaccard_similarities (np.ndarray): A 2D array of Jaccard similarity scores between submissions.
-            - tfidf_similarities (np.ndarray): A 2D array of TF-IDF similarity scores between submissions.
-    """
     filenames = list(submissions.keys())
     n = len(filenames)
-    codebert_similarities = np.zeros((n, n))
-    jaccard_similarities = np.zeros((n, n))
-    tfidf_similarities = np.zeros((n, n))
+    semantic_similarities = np.zeros((n, n))
+    token_similarities = np.zeros((n, n))
+    structural_similarities = np.zeros((n, n))
 
-    # Prepare TF-IDF vectorizer
+    # Prepare TF-IDF vectorizer for structural similarity
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform([sub['sequence'] for sub in submissions.values()])
 
@@ -169,57 +194,126 @@ def compute_similarities(submissions):
 
     for i in range(n):
         for j in range(i+1, n):
-            # CodeBERT similarity
-            codebert_sim = normalized_similarity(embeddings[i], embeddings[j])
-            codebert_similarities[i][j] = codebert_similarities[j][i] = codebert_sim * 100
+            # Semantic similarity (formerly CodeBERT)
+            semantic_sim = normalized_similarity(embeddings[i], embeddings[j])
+            semantic_similarities[i][j] = semantic_similarities[j][i] = semantic_sim * 100
 
-            # Jaccard similarity
-            jaccard_sim = jaccard_similarity(submissions[filenames[i]]['tokens'], submissions[filenames[j]]['tokens'])
-            jaccard_similarities[i][j] = jaccard_similarities[j][i] = jaccard_sim * 100
+            # Token similarity (formerly Jaccard)
+            token_sim = jaccard_similarity(submissions[filenames[i]]['tokens'], submissions[filenames[j]]['tokens'])
+            token_similarities[i][j] = token_similarities[j][i] = token_sim * 100
 
-            # TF-IDF similarity
-            tfidf_sim = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
-            tfidf_similarities[i][j] = tfidf_similarities[j][i] = tfidf_sim * 100
+            # Structural similarity (formerly TF-IDF)
+            structural_sim = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
+            structural_similarities[i][j] = structural_similarities[j][i] = structural_sim * 100
 
-    return codebert_similarities, jaccard_similarities, tfidf_similarities
+    return semantic_similarities, token_similarities, structural_similarities
 
-
-# NOT USED IN main.py
-# Remove in the future
-def check_plagiarism(filenames, directory=None, threshold=80):
-    """
-    Check for plagiarism in code submissions within a directory.
-
-    Args:
-        directory (str): The directory containing code submissions.
-        threshold (float): The similarity threshold for flagging potential plagiarism.
-
-    Returns:
-        list: A list of dictionaries containing file comparisons and similarity scores.
-    """
-    print("Checking for plagiarism in code submissions...")
-    submissions = process_files(directory)
-    codebert_similarities, jaccard_similarities, tfidf_similarities = compute_similarities(submissions)
+def check_plagiarism(directory, threshold=75, tokenizer_type='default', use_tree_sitter=False):
+    submissions = process_files(directory, tokenizer_type, use_tree_sitter)
+    semantic_similarities, token_similarities, structural_similarities = compute_similarities(submissions)
 
     filenames = list(submissions.keys())
-    file_count = len(filenames)
+    n = len(filenames)
+
     results = []
-    for i in range(file_count):
-        comparisons = []
-        for j in range(file_count):
+    total_similarity = 0
+    comparison_count = 0
+
+    for i in range(n):
+        file_result = {"file": filenames[i], "comparisons": {}}
+        for j in range(n):
             if i != j:
-                combined_similarity = (codebert_similarities[i][j] + jaccard_similarities[i][j] + tfidf_similarities[i][j]) / 3
-                comparisons.append({
-                    "filename": filenames[j],
-                    "codebert_similarity": codebert_similarities[i][j],
-                    "jaccard_similarity": jaccard_similarities[i][j],
-                    "tfidf_similarity": tfidf_similarities[i][j],
-                    "combined_similarity": combined_similarity,
-                    "potential_plagiarism": combined_similarity > threshold
-                })
-        results.append({"file": filenames[i], "comparisons": comparisons})
+                semantic_sim = semantic_similarities[i][j]
+                token_sim = token_similarities[i][j]
+                structural_sim = structural_similarities[i][j]
 
-    return results
+                # Calculate weighted combined similarity
+                combined_sim = (
+                    token_sim * 0.45 +          # Token similarity weight
+                    structural_sim * 0.45 +      # Structural similarity weight
+                    semantic_sim * 0.05          # Semantic similarity weight
+                )
 
+                file_result["comparisons"][filenames[j]] = {
+                    "token_similarity": token_sim,
+                    "structural_similarity": structural_sim,
+                    "semantic_similarity": semantic_sim,
+                    "combined_similarity": combined_sim,
+                    "potential_plagiarism": combined_sim > threshold
+                }
 
-    return results
+                total_similarity += combined_sim
+                comparison_count += 1
+
+        results.append(file_result)
+
+    average_similarity = total_similarity / comparison_count if comparison_count > 0 else 0
+
+    return {
+        "threshold": threshold,
+        "weights": {
+            "token_similarity": 0.45,
+            "structural_similarity": 0.45,
+            "semantic_similarity": 0.05
+        },
+        "average_similarity": average_similarity,
+        "results": results
+    }
+
+# User input for analysis type
+print("Choose an analysis type:")
+print("1. Single configuration")
+print("2. All combinations")
+analysis_choice = input("Enter your choice (1/2): ")
+
+if analysis_choice == '1':
+    # Single configuration
+    print("Choose a tokenizer:")
+    print("1. Default")
+    print("2. Word")
+    print("3. Character")
+    tokenizer_choice = input("Enter your choice (1/2/3): ")
+
+    if tokenizer_choice == '1':
+        tokenizer_type = 'default'
+    elif tokenizer_choice == '2':
+        tokenizer_type = 'word'
+    elif tokenizer_choice == '3':
+        tokenizer_type = 'character'
+    else:
+        print("Invalid choice. Using default tokenizer.")
+        tokenizer_type = 'default'
+
+    use_tree_sitter = input("Use Tree-Sitter? (y/n): ").lower() == 'y'
+
+    # Example usage
+    directory = '/kaggle/input/ir-plag-dataset'
+    plagiarism_results = check_plagiarism(directory, tokenizer_type=tokenizer_type, use_tree_sitter=use_tree_sitter)
+
+    # Save to JSON file using the custom encoder
+    filename = f'plagiarism_results_{tokenizer_type}_{"tree_sitter" if use_tree_sitter else "no_tree_sitter"}.json'
+    with open(filename, 'w') as f:
+        json.dump(plagiarism_results, f, indent=2, cls=NumpyEncoder)
+
+    print(f"Results have been saved to '{filename}'")
+    print(f"Average similarity score: {plagiarism_results['average_similarity']:.2f}")
+
+elif analysis_choice == '2':
+    # All combinations
+    directory = '/kaggle/input/ir-plag-dataset'
+    all_results = run_all_combinations(directory)
+
+    # Save all results to a single JSON file
+    filename = 'plagiarism_results_all_combinations.json'
+    with open(filename, 'w') as f:
+        json.dump(all_results, f, indent=2, cls=NumpyEncoder)
+
+    print(f"Results for all combinations have been saved to '{filename}'")
+
+    # Print average similarity scores for each combination
+    print("\nAverage similarity scores:")
+    for key, results in all_results.items():
+        print(f"{key}: {results['average_similarity']:.2f}")
+
+else:
+    print("Invalid choice. Exiting.")
