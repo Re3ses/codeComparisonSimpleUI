@@ -9,6 +9,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
 from transformers import RobertaTokenizer, RobertaModel
+from typing import List, Dict, Tuple
+import ast
+from difflib import SequenceMatcher
 
 # Load Java, Python, and C++ languages
 import tree_sitter_java
@@ -73,11 +76,13 @@ def preprocess_code(code, language):
     code = re.sub(r'\s+', ' ', code).strip()
     return code
 
-
-def jaccard_similarity(set1, set2):
+def jaccard_similarity(tokens1, tokens2):
+    """Compute Jaccard similarity between two token sets"""
+    set1 = set(tokens1)
+    set2 = set(tokens2)
     intersection = len(set1.intersection(set2))
     union = len(set1.union(set2))
-    return intersection / union if union != 0 else 0
+    return intersection / union if union > 0 else 0.0
 
 def normalized_similarity(vec1, vec2):
     return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
@@ -92,25 +97,65 @@ def get_codebert_embedding(code):
     except Exception as e:
         print(f"Error generating CodeBERT embedding: {str(e)}")
         return None
-    
 
-def compute_similarities(submissions):
+def get_structural_similarity(code1: str, code2: str) -> float:
+    """Compare code structure using AST"""
+    try:
+        # Normalize both codes
+        norm_code1 = self.preprocess_code(code1)
+        norm_code2 = self.preprocess_code(code2)
+        
+        # Use sequence matcher for structural comparison
+        return SequenceMatcher(None, norm_code1, norm_code2).ratio()
+    except:
+        return 0.0
+
+def get_token_similarity(code1: str, code2: str) -> float:
+    """Compare code based on token sequences"""
+    def get_tokens(code):
+        try:
+            return [token.string for token in ast.walk(ast.parse(code))]
+        except:
+            return code.split()
+            
+    tokens1 = set(get_tokens(code1))
+    tokens2 = set(get_tokens(code2))
+    
+    if not tokens1 or not tokens2:
+        return 0.0
+        
+    intersection = tokens1.intersection(tokens2)
+    union = tokens1.union(tokens2)
+    
+    return len(intersection) / len(union)
+
+def compute_comprehensive_similarities(submissions: dict) -> tuple:
     """
-    Compute similarity matrices for a set of code submissions using CodeBERT embeddings, Jaccard similarity, and TF-IDF similarity.
+    Compute similarity matrices for a set of code submissions using multiple metrics:
+    structural (AST), token-based, semantic (CodeBERT), Jaccard, and TF-IDF similarities.
+    
     Args:
         submissions (dict): A dictionary where keys are filenames and values are dictionaries containing:
-            - 'sequence' (str): The code sequence.
-            - 'embedding' (np.ndarray): The CodeBERT embedding of the code sequence.
-            - 'tokens' (list of str): The tokens of the code sequence.
+            - 'sequence' (str): The code sequence
+            - 'embedding' (np.ndarray): The CodeBERT embedding of the code sequence
+            - 'tokens' (list of str): The tokens of the code sequence
+            - 'ast' (Any): The AST representation of the code
+            
     Returns:
-        tuple: A tuple containing three numpy arrays:
-            - codebert_similarities (np.ndarray): A 2D array of CodeBERT similarity scores between submissions.
-            - jaccard_similarities (np.ndarray): A 2D array of Jaccard similarity scores between submissions.
-            - tfidf_similarities (np.ndarray): A 2D array of TF-IDF similarity scores between submissions.
+        tuple: A tuple containing five numpy arrays:
+            - structural_similarities (np.ndarray): A 2D array of AST-based structural similarity scores
+            - token_similarities (np.ndarray): A 2D array of token-based similarity scores
+            - semantic_similarities (np.ndarray): A 2D array of CodeBERT semantic similarity scores
+            - jaccard_similarities (np.ndarray): A 2D array of Jaccard similarity scores
+            - tfidf_similarities (np.ndarray): A 2D array of TF-IDF similarity scores
     """
     filenames = list(submissions.keys())
     n = len(filenames)
-    codebert_similarities = np.zeros((n, n))
+    
+    # Initialize similarity matrices
+    structural_similarities = np.zeros((n, n))
+    token_similarities = np.zeros((n, n))
+    semantic_similarities = np.zeros((n, n))
     jaccard_similarities = np.zeros((n, n))
     tfidf_similarities = np.zeros((n, n))
 
@@ -118,20 +163,44 @@ def compute_similarities(submissions):
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform([sub['sequence'] for sub in submissions.values()])
 
+    # Get all embeddings for vectorized computation
     embeddings = np.array([sub['embedding'] for sub in submissions.values()])
 
+    # Compute similarities for all pairs
     for i in range(n):
         for j in range(i+1, n):
-            # CodeBERT similarity
-            codebert_sim = normalized_similarity(embeddings[i], embeddings[j])
-            codebert_similarities[i][j] = codebert_similarities[j][i] = codebert_sim * 100
-
+            file1, file2 = filenames[i], filenames[j]
+            sub1, sub2 = submissions[file1], submissions[file2]
+            
+            # Structural similarity (AST-based)
+            structural_sim = get_structural_similarity(sub1['ast'], sub2['ast'])
+            structural_similarities[i][j] = structural_similarities[j][i] = structural_sim * 100
+            
+            # Token-based similarity
+            token_sim = get_token_similarity(sub1['tokens'], sub2['tokens'])
+            token_similarities[i][j] = token_similarities[j][i] = token_sim * 100
+            
+            # Semantic similarity (CodeBERT)
+            semantic_sim = normalized_similarity(embeddings[i], embeddings[j])
+            semantic_similarities[i][j] = semantic_similarities[j][i] = semantic_sim * 100
+            
             # Jaccard similarity
-            jaccard_sim = jaccard_similarity(submissions[filenames[i]]['tokens'], submissions[filenames[j]]['tokens'])
+            jaccard_sim = jaccard_similarity(sub1['tokens'], sub2['tokens'])
             jaccard_similarities[i][j] = jaccard_similarities[j][i] = jaccard_sim * 100
-
+            
             # TF-IDF similarity
             tfidf_sim = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
             tfidf_similarities[i][j] = tfidf_similarities[j][i] = tfidf_sim * 100
+        
+        # Set diagonal to 100% similarity
+        structural_similarities[i][i] = token_similarities[i][i] = 100
+        semantic_similarities[i][i] = jaccard_similarities[i][i] = 100
+        tfidf_similarities[i][i] = 100
 
-    return codebert_similarities, jaccard_similarities, tfidf_similarities
+    return (
+        structural_similarities,
+        token_similarities,
+        semantic_similarities,
+        jaccard_similarities,
+        tfidf_similarities
+    )
