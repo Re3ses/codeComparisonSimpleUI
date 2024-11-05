@@ -43,6 +43,7 @@ codebert_plagiarism.zip
 test2.py
 .vscode/
 server\v2-codecheck-embedding-similarity-w-tree-sitter.ipynb
+IR-Plag-Dataset\IR-Plag-Dataset
 
 # venv
 venv/
