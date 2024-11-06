@@ -129,7 +129,7 @@ def get_token_similarity(code1: str, code2: str) -> float:
     
     return len(intersection) / len(union)
 
-def compute_comprehensive_similarities(submissions: dict) -> tuple:
+def compute_similarities(submissions: dict) -> tuple:
     """
     Compute similarity matrices for a set of code submissions using multiple metrics:
     structural (AST), token-based, semantic (CodeBERT), Jaccard, and TF-IDF similarities.
