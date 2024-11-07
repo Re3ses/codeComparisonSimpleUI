@@ -45,7 +45,7 @@ def compare_submissions():
         
         submissions = request.json
         results = {}
-        for file_name, submission in submissions.items():
+        for file_name, submission, query in submissions.items():
             results[file_name] = process_submission(submission)
         
         codebert_similarities, jaccard_similarities, tfidf_similarities = compute_similarities(results)
