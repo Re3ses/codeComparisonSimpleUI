@@ -3,6 +3,7 @@ import React, { useState } from "react";
 const CodeComparisonApp = () => {
   const [files, setFiles] = useState([]);
   const [comparisonResult, setComparisonResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const handleFileUpload = (event) => {
     const newFiles = Array.from(event.target.files).map((file) => ({
@@ -14,6 +15,7 @@ const CodeComparisonApp = () => {
   };
 
   const handleCompare = async () => {
+    setLoading(true)
     try {
       console.log("Comparing code");
       const fileData = {};
@@ -40,6 +42,8 @@ const CodeComparisonApp = () => {
       }
     } catch (error) {
       console.error("Error comparing code:", error);
+    } finally {
+      setLoading(false)
     }
   };
 
@@ -60,12 +64,15 @@ const CodeComparisonApp = () => {
               className="block w-full border rounded-md p-2"
               onChange={handleFileUpload}
             />
+            <div>
+            {loading ? <p>loading</p> :
             <button
               onClick={handleCompare}
               className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
             >
               Compare Code
-            </button>
+            </button>}
+            </div>
           </div>
         </div>
 
