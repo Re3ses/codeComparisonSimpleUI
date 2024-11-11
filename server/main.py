@@ -44,6 +44,7 @@ def process_submission(submission):
 @app.route('/compare', methods=['POST'])
 def compare_submissions():
     try:
+        print("compare request received")
         if request.json is None:
             return jsonify({'error': 'No JSON payload received'}), 400
         
@@ -62,6 +63,7 @@ def compare_submissions():
                     'error': f"Error processing {file_name}: {result['error']}", 
                     'traceback': result.get('traceback')
                 }), 400
+            print(f"file: {file_name} processed.")
             processed_submissions[file_name] = result
         
         # Get the list of filenames

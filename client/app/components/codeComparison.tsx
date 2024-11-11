@@ -15,6 +15,7 @@ const CodeComparisonApp = () => {
 
   const handleCompare = async () => {
     try {
+      console.log("Comparing code");
       const fileData = {};
       files.forEach((file) => {
         fileData[file.name] = {
@@ -28,7 +29,7 @@ const CodeComparisonApp = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(fileData),
+        body: JSON.stringify({ submissions: fileData }),
       });
 
       if (response.ok) {
@@ -51,29 +52,27 @@ const CodeComparisonApp = () => {
             Upload Files
           </label>
           <div className="flex flex-row gap-8 items-center">
-          <input
-            id="file-input"
-            type="file"
-            multiple
-            accept=".py"
-            className="block w-full border rounded-md p-2"
-            onChange={handleFileUpload}
-          />
-          <button
+            <input
+              id="file-input"
+              type="file"
+              multiple
+              accept=".py"
+              className="block w-full border rounded-md p-2"
+              onChange={handleFileUpload}
+            />
+            <button
               onClick={handleCompare}
               className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
             >
               Compare Code
             </button>
           </div>
-          
         </div>
 
-        <div className="flex flex-row ">
+        <div className="flex flex-row gap-3">
           <div className="flex flex-row w-1/6">
-            
             <div>
-              <h2 className="font-medium mb-2">Uploaded Files:</h2>
+              <h2 className="font-medium mb-2">Uploaded Files</h2>
               <ul className="list-disc pl-6">
                 {files.map((file, index) => (
                   <li key={index}>{file.name}</li>
@@ -96,13 +95,16 @@ const CodeComparisonApp = () => {
                         <tr>
                           <th className="p-2 border text-left">Filename</th>
                           <th className="p-2 border text-right">
-                            CodeBERT Similarity
+                            Structural Similarity
                           </th>
                           <th className="p-2 border text-right">
-                            Jaccard Similarity
+                            Token Similarity
                           </th>
                           <th className="p-2 border text-right">
                             TF-IDF Similarity
+                          </th>
+                          <th className="p-2 border text-right">
+                            Semantic Similarity
                           </th>
                           <th className="p-2 border text-right">
                             Combined Similarity
@@ -117,20 +119,23 @@ const CodeComparisonApp = () => {
                           <tr
                             key={i}
                             className={
-                              comparison.potential_plagiarism ? "" : ""
+                              comparison.potential_plagiarism ? "bg-red-100" : ""
                             }
                           >
                             <td className="p-2 border">
                               {comparison.filename}
                             </td>
                             <td className="p-2 border text-right">
-                              {comparison.codebert_similarity.toFixed(2)}%
+                              {comparison.structural_similarity.toFixed(2)}%
                             </td>
                             <td className="p-2 border text-right">
-                              {comparison.jaccard_similarity.toFixed(2)}%
+                              {comparison.token_similarity.toFixed(2)}%
                             </td>
                             <td className="p-2 border text-right">
                               {comparison.tfidf_similarity.toFixed(2)}%
+                            </td>
+                            <td className="p-2 border text-right">
+                              {comparison.semantic_similarity.toFixed(2)}%
                             </td>
                             <td className="p-2 border text-right">
                               {comparison.combined_similarity.toFixed(2)}%

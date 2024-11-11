@@ -47,6 +47,9 @@ server/v2-codecheck.ipynb
 IR-Plag-Dataset\IR-Plag-Dataset
 tools
 weighted_ref.py
+pydataset.py
+sample_data
+
 # venv
 venv/
 
