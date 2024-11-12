@@ -2,8 +2,6 @@
 import re
 import os
 import json
-import numpy as np
-from tqdm import tqdm
 import ast
 from difflib import SequenceMatcher
 from tree_sitter import Language, Parser
@@ -223,3 +221,84 @@ class EnhancedCodeSimilarityDetector:
             'tfidf_similarity': tfidf_sim,
             'semantic_similarity': semantic_sim
         }
+
+    def process_submission(self, submission):
+        """
+        Process a single submission using the enhanced detector
+        """
+        try:
+            language = submission['language']
+            code = submission['code']
+            
+            # Preprocess the code
+            preprocessed_code = self.preprocess_code(code, language)
+            
+            return {
+                'code': preprocessed_code,
+                'language': language
+            }
+        except Exception as e:
+            return {'error': str(e)}
+
+    def compare_files(self, submissions):
+        processed_submissions = {}
+        
+        # Process all submissions
+        for file_name, submission in submissions.items():
+            result = self.process_submission(submission)
+            if 'error' in result:
+                return jsonify({
+                    'error': f"Error processing {file_name}: {result['error']}", 
+                    'traceback': result.get('traceback')
+                }), 400
+            print(f"file: {file_name} processed.")
+            processed_submissions[file_name] = result
+        
+        filenames = list(processed_submissions.keys())
+        file_count = len(filenames)
+        
+        weights = {
+            'structural': 0.3,
+            'token': 0.2,
+            'tfidf': 0.2,
+            'semantic': 0.3
+        }
+        
+        comparison_results = []
+        
+        for i in range(file_count):
+            code1 = processed_submissions[filenames[i]]['code']
+            lang1 = processed_submissions[filenames[i]]['language']
+            
+            comparisons = []
+            for j in range(file_count):
+                if i != j:
+                    code2 = processed_submissions[filenames[j]]['code']
+                    lang2 = processed_submissions[filenames[j]]['language']
+                    
+                    if lang1 != lang2:
+                        continue
+                    
+                    similarity_results = self.compute_similarity(
+                        code1,
+                        code2,
+                        language=lang1,
+                        weights=weights
+                    )
+                    
+                    comparisons.append({
+                        "filename": filenames[j],
+                        "structural_similarity": float(similarity_results['structural_similarity'] * 100),
+                        "token_similarity": float(similarity_results['token_similarity'] * 100),
+                        "tfidf_similarity": float(similarity_results['tfidf_similarity'] * 100),
+                        "semantic_similarity": float(similarity_results['semantic_similarity'] * 100),
+                        "combined_similarity": float(similarity_results['total_similarity'] * 100),
+                        "potential_plagiarism": bool(similarity_results['total_similarity'] > 0.8)
+                    })
+            
+            comparison_results.append({
+                "file": filenames[i],
+                "comparisons": comparisons
+            })
+
+        return comparison_results
