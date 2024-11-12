@@ -1,9 +1,15 @@
+# main.py
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 import numpy as np
 from detector_functions import EnhancedCodeSimilarityDetector  
 import traceback
+
+
+# import time for duration calculation
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -43,6 +49,7 @@ def process_submission(submission):
 
 @app.route('/compare', methods=['POST'])
 def compare_submissions():
+    start_time = time.time()
     try:
         print("compare request received")
         if request.json is None:
@@ -128,7 +135,9 @@ def compare_submissions():
             'traceback': tb_str, 
             'request': request.json
         }), 500
-
+    finally:
+        print(f"Total time taken: {time.time() - start_time} seconds")
+        
 @app.route('/test', methods=['GET'])
 def test():
     try:

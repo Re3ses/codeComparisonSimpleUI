@@ -1,3 +1,4 @@
+# detector_functions.py
 import re
 import os
 import json
@@ -11,6 +12,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 import torch
 from transformers import RobertaTokenizer, RobertaModel
 from typing import Dict, Set, List, Any
+
+# for performance testing
+import time
 
 # Load Java, Python, and C++ languages
 import tree_sitter_java
@@ -193,6 +197,8 @@ class EnhancedCodeSimilarityDetector:
                 'tfidf': 0.2,      # TF-IDF similarity
                 'semantic': 0.3    # CodeBERT embeddings
             }
+
+        start_time = time.time()
             
         # Get individual similarity scores
         structural_sim = self.get_structural_similarity(code1, code2, language)
@@ -207,6 +213,8 @@ class EnhancedCodeSimilarityDetector:
             weights['tfidf'] * tfidf_sim +
             weights['semantic'] * semantic_sim
         )
+
+        print(f"Time taken: {time.time() - start_time}")
         
         return {
             'total_similarity': weighted_sim,
@@ -215,29 +223,3 @@ class EnhancedCodeSimilarityDetector:
             'tfidf_similarity': tfidf_sim,
             'semantic_similarity': semantic_sim
         }
-
-    def analyze_submissions(self, 
-                          submissions: Dict[str, str], 
-                          language: str = 'python',
-                          threshold: float = 0.8,
-                          weights: Dict[str, float] = None) -> Dict[str, List[Dict]]:
-        """
-        Analyze multiple submissions with detailed similarity reports
-        """
-        results = {}
-        
-        # Compare all pairs
-        for id1, code1 in submissions.items():
-            results[id1] = []
-            
-            for id2, code2 in submissions.items():
-                if id1 != id2:
-                    similarity = self.compute_similarity(code1, code2, language, weights)
-                    
-                    if similarity['total_similarity'] >= threshold:
-                        results[id1].append({
-                            'compared_to': id2,
-                            'similarity': similarity
-                        })
-        
-        return results
