@@ -147,7 +147,7 @@ const CodeComparisonApp = () => {
                             <td className="p-2 border text-right">
                               {comparison.combined_similarity.toFixed(2)}%
                             </td>
-                            <td className={`p-2 border text-right ${comparison.potential_plagiarism ? " bg-red-500 " : " bg-green-600"}`}>
+                            <td className={`p-2 border text-right ${comparison.potential_plagiarism ? "bg-red-500" : "bg-green-600"}`}>
                               {comparison.potential_plagiarism ? "Yes" : "No"}
                             </td>
                           </tr>
