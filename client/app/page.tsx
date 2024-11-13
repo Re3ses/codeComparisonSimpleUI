@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import CodeComparisonApp from './components/codeComparison';
+import CodeComparisonApp from './comparator/codeComparison';
 
 export default function Home() {  
   return (

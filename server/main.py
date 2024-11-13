@@ -7,7 +7,6 @@ import numpy as np
 from detector_functions import EnhancedCodeSimilarityDetector  
 import traceback
 
-
 # import time for duration calculation
 import time
 
@@ -58,12 +57,5 @@ def compare_submissions():
     finally:
         print(f"Total time taken: {time.time() - start_time} seconds")
         
-@app.route('/test', methods=['GET'])
-def test():
-    try:
-        return jsonify({'message': 'Server is running with Enhanced Code Similarity Detector!'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 if __name__ == '__main__':
     app.run(debug=True)
