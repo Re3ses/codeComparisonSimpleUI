@@ -33,11 +33,6 @@ class EnhancedCodeSimilarityDetector:
         self.model.eval()
 
         # Initialize tree-sitter parsers
-        self.setup_tree_sitter_parsers()
-
-    def setup_tree_sitter_parsers(self):
-        """Setup parsers for different programming languages"""
-        # You'll need to properly initialize these with your tree-sitter libraries
         self.parsers = {
             'java': Parser(JAVA_LANGUAGE),
             'python': Parser(PYTHON_LANGUAGE),
