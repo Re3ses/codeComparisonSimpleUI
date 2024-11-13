@@ -63,3 +63,4 @@ IR-Plag-Dataset
 
 # old files
 *.old
+*.old.py
