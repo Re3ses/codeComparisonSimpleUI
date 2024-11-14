@@ -42,7 +42,9 @@ const CodeComparisonApp = () => {
         },
         body: JSON.stringify({ 
           submissions: fileData,
-          tokenizer: tokenizer
+          query: {
+            tokenizer: tokenizer
+          }
         }),
       });
 
