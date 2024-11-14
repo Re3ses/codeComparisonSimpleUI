@@ -156,15 +156,37 @@ class EnhancedCodeSimilarityDetector:
             return float(cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0])
         except:
             return 0.0
+        
+    def get_codebert_embedding(self, code: str, tokenizer_type='default') -> Any:
+        try:
+            if tokenizer_type == 'default':
+                inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            elif tokenizer_type == 'word':
+                tokens = code.split()
+                inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            elif tokenizer_type == 'character':
+                tokens = list(code)
+                inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            else:
+                raise ValueError(f"Unsupported tokenizer type: {tokenizer_type}")
+            
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = model(**inputs)
+            return outputs.last_hidden_state[:, 0, :].squeeze().cpu().numpy()
+        except Exception as e:
+            print(f"Error generating CodeBERT embedding: {str(e)}")
+            return None
 
-    def get_semantic_similarity(self, code1: str, code2: str) -> float:
+
+    def get_semantic_similarity(self, code1: str, code2: str, tokenizer: str) -> float:
         """
         Semantic similarity using CodeBERT embeddings
         """
         try:
             # Tokenize codes
-            tokens1 = self.tokenizer(code1, padding=True, truncation=True, return_tensors="pt")
-            tokens2 = self.tokenizer(code2, padding=True, truncation=True, return_tensors="pt")
+            tokens1 = self.get_codebert_embeddings(code1, tokenizer) 
+            tokens2 = self.get_codebert_embeddings(code2, tokenizer) 
             
             # Move to device
             tokens1 = {k: v.to(self.device) for k, v in tokens1.items()}
@@ -179,7 +201,7 @@ class EnhancedCodeSimilarityDetector:
         except:
             return 0.0
 
-    def compute_similarity(self, code1: str, code2: str, language: str = 'python', weights: Dict[str, float] = None) -> Dict:
+    def compute_similarity(self, code1: str, code2: str, language: str = 'python', weights: Dict[str, float] = None, tokenizer: str = 'default') -> Dict:
         """
         Compute comprehensive similarity score using all metrics and custom weights
         """
@@ -197,7 +219,7 @@ class EnhancedCodeSimilarityDetector:
         structural_sim = self.get_structural_similarity(code1, code2, language)
         token_sim = self.get_token_similarity(code1, code2)
         tfidf_sim = self.get_tfidf_similarity(code1, code2)
-        semantic_sim = self.get_semantic_similarity(code1, code2)
+        semantic_sim = self.get_semantic_similarity(code1, code2, tokenizer)
         
         # Calculate weighted average
         weighted_sim = (
@@ -235,8 +257,12 @@ class EnhancedCodeSimilarityDetector:
         except Exception as e:
             return {'error': str(e)}
 
-    def compare_files(self, submissions):
+    def compare_files(self, submissions, query):
         processed_submissions = {}
+        
+        # queryies
+        tokenizer = query.get('tokenizer', 'default')
+        print("Comparing using tokenizer:", tokenizer)
         
         # Process all submissions
         for file_name, submission in submissions.items():
@@ -278,7 +304,8 @@ class EnhancedCodeSimilarityDetector:
                         code1,
                         code2,
                         language=lang1,
-                        weights=weights
+                        weights=weights,
+                        tokenizer=tokenizer
                     )
                     
                     comparisons.append({

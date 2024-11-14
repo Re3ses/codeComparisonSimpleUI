@@ -41,8 +41,9 @@ def compare_submissions():
             return jsonify({'error': 'No submissions field in payload'}), 400
         
         submissions = data['submissions']
+        query = data['query']
 
-        comparison_results = detector.compare_files(submissions)
+        comparison_results = detector.compare_files(submissions, query)
         
         return jsonify(comparison_results)
     
