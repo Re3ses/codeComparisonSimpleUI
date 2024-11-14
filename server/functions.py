@@ -1,12 +1,13 @@
 # functions.py
 import re
 import os
-import json
 import numpy as np
+import json
 from tqdm import tqdm
 from tree_sitter import Language, Parser
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import re
 import torch
 from transformers import RobertaTokenizer, RobertaModel
 from typing import List, Dict, Tuple
@@ -31,7 +32,18 @@ tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
 model = RobertaModel.from_pretrained("microsoft/codebert-base")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
-    
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        return json.JSONEncoder.default(self, obj)
+
 def tree_to_sequence(code, language):
     if language == 'java':
         parser = java_parser
@@ -58,6 +70,8 @@ def preprocess_code(code, language):
         code = re.sub(r'//.*?\n|/\*.*?\*/', '', code, flags=re.DOTALL)
     elif language == 'python':
         code = re.sub(r'#.*?\n|\'\'\'.*?\'\'\'|""".*?"""', '', code, flags=re.DOTALL)
+    elif language == 'cpp':
+        code = re.sub(r'//.*?\n|/\*.*?\*/', '', code, flags=re.DOTALL)
 
     # Remove string literals
     code = re.sub(r'".*?"', '""', code)
@@ -67,6 +81,8 @@ def preprocess_code(code, language):
         code = re.sub(r'import\s+[\w.]+;', '', code)
     elif language == 'python':
         code = re.sub(r'import\s+[\w.]+|from\s+[\w.]+\s+import\s+[\w.]+', '', code)
+    elif language == 'cpp':
+        code = re.sub(r'#include\s+<[\w.]+>|#include\s+"[\w.]+"', '', code)
 
     # Remove package declarations (Java only)
     if language == 'java':
@@ -89,7 +105,17 @@ def normalized_similarity(vec1, vec2):
     
 def get_codebert_embedding(code):
     try:
-        inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        if tokenizer_type == 'default':
+            inputs = tokenizer(code, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        elif tokenizer_type == 'word':
+            tokens = code.split()
+            inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        elif tokenizer_type == 'character':
+            tokens = list(code)
+            inputs = tokenizer(tokens, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        else:
+            raise ValueError(f"Unsupported tokenizer type: {tokenizer_type}")
+
         inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
             outputs = model(**inputs)
@@ -97,7 +123,6 @@ def get_codebert_embedding(code):
     except Exception as e:
         print(f"Error generating CodeBERT embedding: {str(e)}")
         return None
-
 def get_structural_similarity(code1: str, code2: str) -> float:
     """Compare code structure using AST"""
     try:
@@ -159,7 +184,7 @@ def compute_similarities(submissions: dict) -> tuple:
     jaccard_similarities = np.zeros((n, n))
     tfidf_similarities = np.zeros((n, n))
 
-    # Prepare TF-IDF vectorizer
+    # Prepare TF-IDF vectorizer for structural similarity
     vectorizer = TfidfVectorizer()
     tfidf_matrix = vectorizer.fit_transform([sub['sequence'] for sub in submissions.values()])
 
@@ -204,3 +229,4 @@ def compute_similarities(submissions: dict) -> tuple:
         jaccard_similarities,
         tfidf_similarities
     )
+

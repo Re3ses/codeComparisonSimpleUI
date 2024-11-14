@@ -45,6 +45,8 @@ test2.py
 server/v2-codecheck.ipynb
 IR-Plag-Dataset\IR-Plag-Dataset
 tools
+server\v2-codecheck-embedding-similarity-w-tree-sitter.ipynb
+IR-Plag-Dataset\IR-Plag-Dataset
 
 # venv
 venv/
